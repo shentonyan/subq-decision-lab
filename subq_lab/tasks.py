@@ -212,27 +212,58 @@ def all_instances(seed: int = 0, n_per_task: int = 40) -> list[Instance]:
 
 
 # --------------------------------------------------------------- scoring
+def score_probs(q: dict, answer: dict) -> list[float]:
+    """Per-level probabilities of a score answer, indexed 0..L-1.
+
+    SubQ keys them "0","1",...; other servers may key by level label, so both
+    are accepted.
+    """
+    levels = q["criteria"]
+    probs = answer.get("probabilities") or {}
+    out = [0.0] * len(levels)
+    for k, p in probs.items():
+        if str(k).lstrip("-").isdigit() and 0 <= int(k) < len(levels):
+            out[int(k)] = float(p)
+        elif k in levels:
+            out[levels.index(k)] = float(p)
+    return out
+
+
+def top_prob(q: dict, answer: dict) -> float:
+    """Probability the model puts on the answer it reports (its confidence)."""
+    t = q["type"]
+    if t == "noul":
+        p = float(answer["noul"])
+        return max(p, 1 - p)
+    if t == "choice":
+        probs = answer.get("probabilities") or {}
+        return float(probs.get(answer.get("choice"), max(probs.values(), default=0.0)))
+    return max(score_probs(q, answer), default=0.0)
+
+
 def pairs_from_answer(q: dict, answer: dict, truth: Any) -> list[tuple[float, int]]:
     """Convert one answer into (p, y) pairs for calibration metrics."""
-    t = answer.get("type", q["type"])
+    t = q["type"]
     if t == "noul":
         p = float(answer["noul"])
         return [(p, int(bool(truth)))]
     if t == "choice":
-        probs = answer.get("probabilities", {})
+        probs = answer.get("probabilities") or {}
         return [(float(p), int(opt == truth)) for opt, p in probs.items()]
     if t == "score":
-        probs = answer.get("probabilities", {})
-        return [(float(p), int(int(lvl) == int(truth))) for lvl, p in probs.items()]
+        return [(p, int(i == int(truth))) for i, p in enumerate(score_probs(q, answer))]
     return []
 
 
 def is_correct(q: dict, answer: dict, truth: Any) -> bool:
-    t = answer.get("type", q["type"])
+    t = q["type"]
     if t == "noul":
         return (float(answer["noul"]) >= 0.5) == bool(truth)
     if t == "choice":
         return answer.get("choice") == truth
     if t == "score":
+        ps = score_probs(q, answer)
+        if any(ps):
+            return max(range(len(ps)), key=ps.__getitem__) == int(truth)
         return int(round(float(answer["score"]))) == int(truth)
     return False

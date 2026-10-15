@@ -1,11 +1,14 @@
-"""Experiment 1 — Is a System-1 decision model calibrated on mechanism-design ground truth?
+"""Experiment 1 — Are decision-model probabilities calibrated on mechanism-design ground truth?
 
 For auctions, stable matching and a rule-based drone triage policy, ask typed
 questions whose correct answers are computed in code, then score accuracy,
-Brier, log-loss and ECE per task/question. Cost at n=40 per task: ~120 calls
-of ~300 tokens = ~36K tokens = $0.002.
+Brier, log-loss and ECE per task/question. The same instances go to every
+backend, so SubQ and a local Laya can be compared item by item.
 
-Run:  python experiments/exp01_calibration.py --n 40 --seed 0
+Cost on SubQ at n=40 per task: ~120 calls x ~300 tokens = ~36K tokens = ~$0.002.
+Laya runs locally for free.
+
+Run:  python experiments/exp01_calibration.py --backend subq --backend laya --n 40
 """
 from __future__ import annotations
 
@@ -17,34 +20,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from subq_lab.client import SubQClient  # noqa: E402
+from subq_lab.client import make_client  # noqa: E402
 from subq_lab.metrics import report  # noqa: E402
-from subq_lab.tasks import all_instances, is_correct, pairs_from_answer  # noqa: E402
+from subq_lab.tasks import all_instances, is_correct, pairs_from_answer, top_prob  # noqa: E402
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=40, help="instances per task")
-    ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default="results/exp01")
-    ap.add_argument("--mock", action="store_true", help="use the offline mock client")
-    args = ap.parse_args()
-
-    if args.mock:
-        from subq_lab.mock import MockClient as Client
-    else:
-        Client = SubQClient
-    client = Client()
-
-    instances = all_instances(seed=args.seed, n_per_task=args.n)
+def run_backend(backend: str, instances, out_root: Path) -> dict:
+    client = make_client(backend)
     rows = []
     pairs: dict[str, list] = defaultdict(list)
     correct: dict[str, list] = defaultdict(list)
 
     for idx, inst in enumerate(instances):
-        resp = client.decide(inst.state, inst.questions)
+        try:
+            resp = client.decide(inst.state, inst.questions)
+        except Exception as e:  # keep going; one bad item should not sink the run
+            print(f"  ! item {idx} ({inst.task}) failed: {e}")
+            continue
         for qname, q in inst.questions.items():
-            ans = resp["answers"][qname]
+            ans = (resp.get("answers") or {}).get(qname)
+            if ans is None:
+                continue
             truth = inst.truth[qname]
             ok = is_correct(q, ans, truth)
             # Several blocking pairs can be correct; accept any of them.
@@ -56,18 +52,24 @@ def main() -> None:
             rows.append(
                 {
                     "i": idx,
+                    "backend": backend,
                     "task": inst.task,
                     "question": qname,
+                    "q": q,
                     "truth": truth,
                     "answer": ans,
                     "correct": ok,
+                    "top_prob": top_prob(q, ans),
+                    "latency_ms": resp.get("_latency_ms"),
+                    "input_tokens": (resp.get("usage") or {}).get("input_tokens"),
                     "meta": inst.meta,
+                    "accepted": inst.truth.get("all_blocking") if qname == "blocking_pair" else None,
                 }
             )
         if (idx + 1) % 20 == 0:
-            print(f"[{idx + 1}/{len(instances)}] {client.summary()}")
+            print(f"  [{idx + 1}/{len(instances)}] {client.summary()}")
 
-    out = Path(args.out)
+    out = out_root / backend
     out.mkdir(parents=True, exist_ok=True)
     (out / "rows.jsonl").write_text(
         "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8"
@@ -76,20 +78,36 @@ def main() -> None:
     for key in sorted(pairs):
         rep = report(pairs[key])
         rep["top1_accuracy"] = sum(correct[key]) / len(correct[key])
+        rep["n_items"] = len(correct[key])
         summary[key] = rep
     summary["_cost"] = client.summary()
     (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    print("\n=== Exp01 calibration on mechanism-design ground truth ===")
+    print(f"\n=== Exp01 [{backend}] calibration on mechanism-design ground truth ===")
     print(f"{'task/question':32} {'n':>4} {'top1':>6} {'brier':>7} {'logloss':>8} {'ece':>6}")
     for key, rep in summary.items():
         if key.startswith("_"):
             continue
         print(
-            f"{key:32} {len(correct[key]):4d} {rep['top1_accuracy']:6.2f} "
+            f"{key:32} {rep['n_items']:4d} {rep['top1_accuracy']:6.2f} "
             f"{rep['brier']:7.3f} {rep['log_loss']:8.3f} {rep['ece']:6.3f}"
         )
     print(client.summary())
+    return summary
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--backend", action="append", help="subq | laya | mock-sharp | mock-soft (repeatable)")
+    ap.add_argument("--n", type=int, default=40, help="instances per task")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--out", default="results/exp01")
+    args = ap.parse_args()
+    backends = args.backend or ["subq"]
+
+    instances = all_instances(seed=args.seed, n_per_task=args.n)
+    for b in backends:
+        run_backend(b, instances, Path(args.out))
 
 
 if __name__ == "__main__":
