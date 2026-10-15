@@ -31,15 +31,11 @@ Task families (`subq_lab/tasks.py`):
 
 ## Figures
 
-| | |
-|---|---|
-| `fig1_accuracy` | top-1 accuracy per question, models side by side, with the chance level |
-| `fig2_reliability` | reliability diagrams (raw vs temperature-scaled) plus a histogram of predicted probabilities |
-| `fig3_calibration_bars` | ECE / Brier / log-loss before and after temperature scaling |
-| `fig4_confidence_right_vs_wrong` | whether a model is less sure when it is wrong |
-| `fig5_agreement` | P(yes) from model A vs model B on the same yes/no items |
-| `fig6_wording` | spread of P(yes) across phrasings, and accuracy per phrasing |
-| `fig7_latency` | wall-clock latency per request |
+`analysis/make_figures.py` regenerates the block below from the latest results.
+
+<!-- FIGURES:START -->
+_No results yet: run the experiments, then `python analysis/make_figures.py`._
+<!-- FIGURES:END -->
 
 Temperature scaling fits one temperature per question type on even-numbered
 items and reports odd-numbered items, so the scaled numbers are out-of-sample.

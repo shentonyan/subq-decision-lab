@@ -61,6 +61,8 @@ def run_backend(backend: str, items, out_root: Path) -> None:
                 ps[name] = float(resp["answers"]["q"]["noul"])
             except Exception as e:
                 print(f"  ! item {i} {name} failed: {e}")
+        if (i + 1) % 10 == 0:
+            print(f"  [{i + 1}/{len(items)}] {client.summary()}", flush=True)
         if len(ps) < 2:
             continue
         vals = list(ps.values())

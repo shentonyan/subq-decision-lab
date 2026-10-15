@@ -468,10 +468,45 @@ def write_report(e1, e2, order, tab, out_md: Path, fig_dir: Path):
     print("wrote", out_md)
 
 
+CAPTIONS = {
+    "fig1_accuracy": "Top-1 accuracy per question; grey tick = chance (uniform guess).",
+    "fig2_reliability": "Reliability on held-out items, raw vs temperature-scaled; histogram shows where each model puts its probability mass.",
+    "fig3_calibration_bars": "ECE / Brier / log-loss before and after per-type temperature scaling.",
+    "fig4_confidence_right_vs_wrong": "Probability each model puts on its own answer, split by correct vs wrong.",
+    "fig5_agreement": "P(yes) from two models on the same yes/no items.",
+    "fig6_wording": "Same question in four phrasings: spread of P(yes) and accuracy per phrasing.",
+    "fig7_latency": "Wall-clock latency per request (hosted latency includes the network).",
+}
+
+
+def update_readme(readme: Path, fig_dir: Path, order, tab) -> None:
+    """Rewrite the block between the FIGURES markers with embedded images."""
+    if not readme.exists():
+        return
+    text = readme.read_text(encoding="utf-8")
+    a, b = "<!-- FIGURES:START -->", "<!-- FIGURES:END -->"
+    if a not in text or b not in text:
+        return
+    L = ["", "| model | held-out acc | ECE raw → scaled | Brier raw → scaled |", "|---|---|---|---|"]
+    for m in order:
+        t = tab[m]
+        L.append(f"| {label_of(m)} | {t['raw']['Acc']:.2f} | {t['raw']['ECE']:.3f} → {t['scaled']['ECE']:.3f} "
+                 f"| {t['raw']['Brier']:.3f} → {t['scaled']['Brier']:.3f} |")
+    L += ["", "Full tables: [`results/REPORT.md`](results/REPORT.md).", ""]
+    rel = fig_dir.resolve().relative_to(readme.parent.resolve()).as_posix() if fig_dir.resolve().is_relative_to(readme.parent.resolve()) else fig_dir.as_posix()
+    for f in sorted(fig_dir.glob("fig*.png")):
+        L += [f"**{CAPTIONS.get(f.stem, f.stem)}**", "", f"![{f.stem}]({rel}/{f.name})", ""]
+    head, rest = text.split(a, 1)
+    _, tail = rest.split(b, 1)
+    readme.write_text(head + a + "\n" + "\n".join(L) + "\n" + b + tail, encoding="utf-8")
+    print("updated", readme)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results")
     ap.add_argument("--figures", default="figures")
+    ap.add_argument("--readme", default="README.md", help="README to embed figures into ('' to skip)")
     args = ap.parse_args()
     res, out = Path(args.results), Path(args.figures)
     out.mkdir(parents=True, exist_ok=True)
@@ -489,6 +524,8 @@ def main():
     fig_wording(e2, [b for b in order if b in e2] + [b for b in e2 if b not in order], out)
     fig_latency(e1, e2, order, out)
     write_report(e1, e2, order, tab, res / "REPORT.md", out)
+    if args.readme:
+        update_readme(Path(args.readme), out, order, tab)
 
 
 if __name__ == "__main__":
