@@ -34,7 +34,43 @@ Task families (`subq_lab/tasks.py`):
 `analysis/make_figures.py` regenerates the block below from the latest results.
 
 <!-- FIGURES:START -->
-_No results yet: run the experiments, then `python analysis/make_figures.py`._
+
+| model | held-out acc | ECE raw → scaled | Brier raw → scaled |
+|---|---|---|---|
+| SubQ snap-preview | 0.82 | 0.024 → 0.032 | 0.218 → 0.215 |
+| Laya english | 0.37 | 0.151 → 0.053 | 0.770 → 0.651 |
+| Laya typed-decisions | 0.38 | 0.058 → 0.029 | 0.654 → 0.638 |
+
+Full tables: [`results/REPORT.md`](results/REPORT.md).
+
+**Top-1 accuracy per question; grey tick = chance (uniform guess).**
+
+![fig1_accuracy](figures/fig1_accuracy.png)
+
+**Reliability on held-out items, raw vs temperature-scaled; histogram shows where each model puts its probability mass.**
+
+![fig2_reliability](figures/fig2_reliability.png)
+
+**ECE / Brier / log-loss before and after per-type temperature scaling.**
+
+![fig3_calibration_bars](figures/fig3_calibration_bars.png)
+
+**Probability each model puts on its own answer, split by correct vs wrong.**
+
+![fig4_confidence_right_vs_wrong](figures/fig4_confidence_right_vs_wrong.png)
+
+**P(yes) from two models on the same yes/no items.**
+
+![fig5_agreement](figures/fig5_agreement.png)
+
+**Same question in four phrasings: spread of P(yes) and accuracy per phrasing.**
+
+![fig6_wording](figures/fig6_wording.png)
+
+**Wall-clock latency per request (hosted latency includes the network).**
+
+![fig7_latency](figures/fig7_latency.png)
+
 <!-- FIGURES:END -->
 
 Temperature scaling fits one temperature per question type on even-numbered
