@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 results/cache.jsonl
+.venv*/
+results/*.log
